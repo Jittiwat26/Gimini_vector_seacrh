@@ -1,0 +1,5 @@
+langchain
+langchain_google_vertexai
+langchain_community
+line-bot-sdk==3.5.0
+flask
