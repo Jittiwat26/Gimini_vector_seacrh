@@ -9,6 +9,7 @@ app = Flask(__name__)
 
 
 
+
 @app.route("/healthz", methods=['GET'])
 def health_check():
     return "health check"
@@ -20,19 +21,17 @@ def callback():
     print(body)
     req = request.get_json(silent=True, force=True)
     events = req['events']
+    destination = req['destination']
     if events:
-        event = events[0]  # Assuming you want to handle the first event
+        event = events[0]
         reply_token = event['replyToken']
         text = event['message']['text']
 
         print(f"Reply Token: {reply_token}")
         print(f"Text: {text}")
-        system_prompt = (
-            "you are Poker assistant"
-            "Use the given player_hand to answer determine wether to float or not "
-            "player_hand: {context}"
-        )
-        response = promp_ai(text)
+
+
+        response = promp_ai(text, session_id = destination)
         line_bot_api.reply_message(reply_token, TextSendMessage(text=f"{response}"))
     return 'OK'
 def reply(intent,text,reply_token,id,disname, lotto_number, session):
