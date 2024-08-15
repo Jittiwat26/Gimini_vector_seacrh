@@ -10,21 +10,20 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.chat_history import BaseChatMessageHistory
 
+# Project and environment settings
 PROJECT_ID = "solutions-data"
 DATASET = "companyData"
 TABLE = "company_data"
 TABLEEMBED = "company_detail_embedding"
 REGION = "asia-southeast1"
 JSON_KEY_PATH = "credential/vertexAi.json"
-# REGION = "US"
-
 
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = JSON_KEY_PATH
 
 embedding_model = VertexAIEmbeddings(
     model_name="text-multilingual-embedding-002", project=PROJECT_ID
 )
-bq_vector_datasource= BigQueryVectorSearch(
+bq_vector_datasource = BigQueryVectorSearch(
     project_id=PROJECT_ID,
     dataset_name=DATASET,
     table_name=TABLEEMBED,
@@ -32,71 +31,70 @@ bq_vector_datasource= BigQueryVectorSearch(
     embedding=embedding_model,
 )
 
-
-
-
-def ai_config(config_prompt, model_name):
-    llm = ChatVertexAI(model_name=model_name, max_tokens=None, max_retries=2)
-    if config_prompt != "":
-        system_prompt = (config_prompt)
-    else:
-        system_prompt = """
-            "you are an Ai name จิดริ้ด"
-            "Use the given context to answer the question. "
-            "If you don't know the answer, say you don't know. "
-            "You can find closest anwser and give to user"
-            "use all embedding data to anwser the question"
-            "response thai language"
-            "Context: {context}"
+# Function to configure AI settings
+def ai_config(model_name="gemini-1.5-pro-001", max_tokens=8192, max_retries=2, first_time=True):
+    llm = ChatVertexAI(model_name=model_name, max_tokens=max_tokens, max_retries=max_retries)
+    if first_time:
+        config_prompt = """
+            Hey there! I'm จิดริ้ด, your friendly AI assistant. 😊
+            
+            user name: {user_name}
+            Greet user with their name first time you talk to them and refer them as thier name
+            
+            I’m here to help with any questions you have, using the context you provide. If there's something I'm not sure about, I'll let you know. Don’t worry—I’ll do my best to find the closest answer for you!
+            
+            Just to keep things smooth, I’ll use all the info available to give you the best response. And yes, I'll be chatting with you in Thai!
+            
+            Here’s the context I’ve got: {context}
         """
-    return (system_prompt, llm)
+    else:
+        config_prompt = """
+            You are จิดริ้ด friendly AI assistant. 😊
+            context: {context}
+            input: {input}
+            this is context that you have talk to user before use them as basic information to give user anwser
+            
+            you not have to greet user again
+            
+            the input of user might not contain necessary information you might get that from context just use that
+            
+            just keep thing smooth and chatting with user with thai
+            
+            
+            user name: {user_name}
+            refer user as their name
+        """
 
+    return config_prompt, llm
 
-
-
+# In-memory store for session history
 store = {}
 def get_session_history(session_id: str) -> BaseChatMessageHistory:
     if session_id not in store:
         store[session_id] = ChatMessageHistory()
     return store[session_id]
 
-# def promp_ai(query, config_prompt = "", model_name = "gemini-1.5-pro-001", session_id = ""):
-#     system_prompt, llm = ai_config(config_prompt, model_name)
-#     prompt = ChatPromptTemplate.from_messages(
-#         [
-#             ("system", system_prompt),
-#             ("human", "{input}"),
-#         ]
-#     )
-#     retriever = bq_vector_datasource.as_retriever(search_type="mmr")
-#     history_aware_retriever = create_history_aware_retriever(
-#     llm, retriever, prompt
-#     )
-#     #Create a chain for passing a list of Documents to a model.
-#     question_answer_chain = create_stuff_documents_chain(llm, prompt)
-#     #Create retrieval chain that retrieves documents and then passes them on.
-#     chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
-#     if session_id == "":
-#         result = chain.invoke({"input": query})
-#     else:
-#
-#         conversational_rag_chain = RunnableWithMessageHistory(
-#             chain,
-#             get_session_history,
-#             input_messages_key="input",
-#             history_messages_key="chat_history",
-#             output_messages_key="answer",
-#         )
-#         result = conversational_rag_chain.invoke({"input": query},config={"configurable": {"session_id": session_id}})
-#     print("**************************")
-#     print(store)
-#     print("**************************")
-#
-#     return result.get("answer")
+# Function to prompt AI and retrieve results
+def prompt_ai(query, model_name="gemini-1.5-pro-001", session_id="", user_name="ลูกค้า", max_tokens=8192, max_retries=2):
 
+    context = ""  # Initialize an empty context
+    first_time = True
+    if session_id:
+        message_history = get_session_history(session_id)
+        if message_history and message_history.messages:
+            context = " ".join([msg.content for msg in message_history.messages])
+            first_time = False
+        else:
+            print("No message history found or message history is empty.")
+            first_time = True
+    else:
+        print("No session ID provided, using default context.")
 
-def promp_ai(query, config_prompt="", model_name="gemini-1.5-pro-001", session_id=""):
-    system_prompt, llm = ai_config(config_prompt, model_name)
+    # Debug context construction
+    print(f"Constructed context: {context}")
+    print(f"first_time : {first_time}")
+
+    system_prompt, llm = ai_config(model_name, max_tokens, max_retries, first_time)
 
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -105,20 +103,13 @@ def promp_ai(query, config_prompt="", model_name="gemini-1.5-pro-001", session_i
         ]
     )
 
-    retriever = bq_vector_datasource.as_retriever(search_type="mmr")
+    retriever = bq_vector_datasource.as_retriever(search_type="mmr", search_kwargs={"k": 1000})
     history_aware_retriever = create_history_aware_retriever(llm, retriever, prompt)
-
-    # Create a chain for passing a list of Documents to a model.
     question_answer_chain = create_stuff_documents_chain(llm, prompt)
-
-    # Create retrieval chain that retrieves documents and then passes them on.
     chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
 
-    # Here we need to fetch the context first.
-    context = ""  # Initialize an empty context
-    if session_id:  # Only fetch if session_id is provided
-        message_history = get_session_history(session_id)
-        context = " ".join([msg.content for msg in message_history.messages])
+
+    try:
         conversational_rag_chain = RunnableWithMessageHistory(
             chain,
             get_session_history,
@@ -126,12 +117,13 @@ def promp_ai(query, config_prompt="", model_name="gemini-1.5-pro-001", session_i
             history_messages_key="chat_history",
             output_messages_key="answer",
         )
-    print(context)
-    # If no session_id, just use the query directly
-    result = conversational_rag_chain.invoke({"input": query, "context": context},config={"configurable": {"session_id": session_id}})
+        result = conversational_rag_chain.invoke({"input": query, "context": context, "user_name": user_name}, config={"configurable": {"session_id": session_id}})
+        answer = result.get("answer", "No answer found.")
+    except Exception as e:
+        print(f"Error during invocation: {e}")
+        answer = "An error occurred."
 
-    print("**************************")
-    print(store)
-    print("**************************")
+    # Debug result
+    print(f"Result: {answer}")
 
-    return result.get("answer")
+    return answer

@@ -1,19 +1,16 @@
 from flask import Flask, request
 from linebot.models import *
 from linebot import *
-from vertex_ai import promp_ai
+from vertex_ai import prompt_ai
 import datetime
+import requests  # Import the requests library
 
 app = Flask(__name__)
-
-
-
 
 
 @app.route("/healthz", methods=['GET'])
 def health_check():
     return "health check"
-
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -26,16 +23,40 @@ def callback():
         event = events[0]
         reply_token = event['replyToken']
         text = event['message']['text']
+        user_id = event['source']['userId']  # Extract the user ID from the event data
 
         print(f"Reply Token: {reply_token}")
         print(f"Text: {text}")
+        print(f"req: {req}")
 
+        # Call LINE API to get user profile
+        user_profile_url = f"https://api.line.me/v2/bot/profile/{user_id}"
+        headers = {
+            'Authorization': 'Bearer I9mgk1gqe7x4tirEd5AjNi5Il91E0iiAF44CeRU/kaQd+NatHpxtBXMNE6PbArDhuIptcyh77FDtueM9f+6gqKAAnVpqxPKKc4DsCNjWuK4IxK8xcxOmzn9j9YE8oavM1wc+o+8Uo8UDgT6uS9XSaQdB04t89/1O/w1cDnyilFU='
+        }
 
-        response = promp_ai(text, session_id = destination)
+        # Make the GET request to fetch user profile
+        try:
+            profile_response = requests.get(user_profile_url, headers=headers)
+            if profile_response.status_code == 200:
+                user_profile = profile_response.json()
+                display_name = user_profile.get('displayName', 'User')
+                print(f"User Display Name: {display_name}")
+            else:
+                print(f"Failed to fetch user profile: {profile_response.status_code}")
+        except Exception as e:
+            print(f"Error fetching user profile: {e}")
+
+        # Get response from prompt_ai
+        response = prompt_ai(text, session_id=destination, user_name=display_name)
+
+        # Reply with the AI response
         line_bot_api.reply_message(reply_token, TextSendMessage(text=f"{response}"))
+
     return 'OK'
-def reply(intent,text,reply_token,id,disname, lotto_number, session):
+
+def reply(intent, text, reply_token, id, disname, lotto_number, session):
     print(text)
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0")
-
