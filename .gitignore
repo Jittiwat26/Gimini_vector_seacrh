@@ -162,3 +162,5 @@ cython_debug/
 #.idea/
 
 credential
+ test.py
+ test2.py

@@ -6,15 +6,14 @@ import os
 from langchain.chains import create_retrieval_chain, create_history_aware_retriever
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.chat_history import BaseChatMessageHistory
 
 # Project and environment settings
 PROJECT_ID = "solutions-data"
 DATASET = "companyData"
-TABLE = "company_data"
-TABLEEMBED = "company_detail_embedding"
+TABLEEMBED = "Pre_Test_Order_Embedding"
 REGION = "asia-southeast1"
 JSON_KEY_PATH = "credential/vertexAi.json"
 
@@ -29,40 +28,50 @@ bq_vector_datasource = BigQueryVectorSearch(
     table_name=TABLEEMBED,
     location=REGION,
     embedding=embedding_model,
+    content_field="text",
+    text_embedding_field="embedding"
 )
 
 # Function to configure AI settings
-def ai_config(model_name="gemini-1.5-pro-001", max_tokens=8192, max_retries=2, first_time=True):
+def ai_config(model_name="gemini-1.5-pro-001", max_tokens=8192, max_retries=6, first_time=True):
     llm = ChatVertexAI(model_name=model_name, max_tokens=max_tokens, max_retries=max_retries)
     if first_time:
         config_prompt = """
             Hey there! I'm จิดริ้ด, your friendly AI assistant. 😊
             
             user name: {user_name}
-            Greet user with their name first time you talk to them and refer them as thier name
+            Greet the user with their name the first time you talk to them and refer to them by their name throughout.
             
-            I’m here to help with any questions you have, using the context you provide. If there's something I'm not sure about, I'll let you know. Don’t worry—I’ll do my best to find the closest answer for you!
+            Using only provided information
             
-            Just to keep things smooth, I’ll use all the info available to give you the best response. And yes, I'll be chatting with you in Thai!
+            Do not mad up match data if it over your capability just inform user that
+            
+            just keep conversation natural but short you here to assist with data engineer problem
+            
+            answer ih thai
             
             Here’s the context I’ve got: {context}
         """
     else:
         config_prompt = """
-            You are จิดริ้ด friendly AI assistant. 😊
-            context: {context}
-            input: {input}
-            this is context that you have talk to user before use them as basic information to give user anwser
-            
-            you not have to greet user again
-            
-            the input of user might not contain necessary information you might get that from context just use that
-            
-            just keep thing smooth and chatting with user with thai
+            You are จิดริ้ด, a friendly AI assistant. 😊
+            Context: {context}
+            Input: {input}
+            This is the context that you have discussed with the user before; use it as basic information to give the user an answer.
             
             
-            user name: {user_name}
-            refer user as their name
+            User name: {user_name}
+            You do not have to greet the user again.
+            
+            Using only provided information
+            
+            Do not mad up match data if it over your capability just inform user that
+            
+            just keep conversation natural but short you here to assist with data engineer problem
+            
+            answer ih thai
+            
+            Refer to the user by their name.
         """
 
     return config_prompt, llm
@@ -74,8 +83,16 @@ def get_session_history(session_id: str) -> BaseChatMessageHistory:
         store[session_id] = ChatMessageHistory()
     return store[session_id]
 
+# Function to batch retrieve results using fetch_k
+def batch_retrieval_with_fetch_k(retriever, query, batch_size=1000, fetch_k=2000, num_batches=10):
+    results = []
+    for _ in range(num_batches):
+        batch_results = retriever.get_relevant_documents(query, k=batch_size, fetch_k=fetch_k)
+        results.extend(batch_results)
+    return results
+
 # Function to prompt AI and retrieve results
-def prompt_ai(query, model_name="gemini-1.5-pro-001", session_id="", user_name="ลูกค้า", max_tokens=8192, max_retries=2):
+def prompt_ai(query, model_name="gemini-1.5-pro-001", session_id="", user_name="ลูกค้า", max_tokens=8192, max_retries=1000):
 
     context = ""  # Initialize an empty context
     first_time = True
@@ -92,36 +109,45 @@ def prompt_ai(query, model_name="gemini-1.5-pro-001", session_id="", user_name="
 
     # Debug context construction
     print(f"Constructed context: {context}")
-    print(f"first_time : {first_time}")
+    print(f"First time: {first_time}")
 
     system_prompt, llm = ai_config(model_name, max_tokens, max_retries, first_time)
 
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", system_prompt),
+            MessagesPlaceholder("chat_history"),
             ("human", "{input}"),
         ]
     )
 
-    retriever = bq_vector_datasource.as_retriever(search_type="mmr", search_kwargs={"k": 1000})
+    retriever = bq_vector_datasource.as_retriever(search_type="mmr", search_kwargs={"k": 1000, "fetch_k": 1000})
+    retrieved_documents = batch_retrieval_with_fetch_k(retriever, query, batch_size=1000, fetch_k=1000, num_batches=10)
+
+    # Convert the retrieved documents into a format expected by the question_answer_chain
+    documents = [doc.page_content for doc in retrieved_documents]
+
     history_aware_retriever = create_history_aware_retriever(llm, retriever, prompt)
     question_answer_chain = create_stuff_documents_chain(llm, prompt)
     chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
 
+    # try:
+    conversational_rag_chain = RunnableWithMessageHistory(
+        chain,
+        get_session_history,
+        input_messages_key="input",
+        history_messages_key="chat_history",
+        output_messages_key="answer",
+    )
 
-    try:
-        conversational_rag_chain = RunnableWithMessageHistory(
-            chain,
-            get_session_history,
-            input_messages_key="input",
-            history_messages_key="chat_history",
-            output_messages_key="answer",
-        )
-        result = conversational_rag_chain.invoke({"input": query, "context": context, "user_name": user_name}, config={"configurable": {"session_id": session_id}})
-        answer = result.get("answer", "No answer found.")
-    except Exception as e:
-        print(f"Error during invocation: {e}")
-        answer = "An error occurred."
+    result = conversational_rag_chain.invoke(
+        {"input": query, "context": context, "user_name": user_name, "documents": documents},
+        config={"configurable": {"session_id": session_id}},
+    )
+    answer = result.get("answer", "No answer found.")
+    # except Exception as e:
+    #     print(f"Error during invocation: {e}")
+    #     answer = "An error occurred."
 
     # Debug result
     print(f"Result: {answer}")

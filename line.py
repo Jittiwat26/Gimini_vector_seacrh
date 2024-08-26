@@ -6,6 +6,9 @@ import datetime
 import requests  # Import the requests library
 
 app = Flask(__name__)
+line_bot_api = LineBotApi('I9mgk1gqe7x4tirEd5AjNi5Il91E0iiAF44CeRU/kaQd+NatHpxtBXMNE6PbArDhuIptcyh77FDtueM9f+6gqKAAnVpqxPKKc4DsCNjWuK4IxK8xcxOmzn9j9YE8oavM1wc+o+8Uo8UDgT6uS9XSaQdB04t89/1O/w1cDnyilFU=')
+line_bot_api_test = 'I9mgk1gqe7x4tirEd5AjNi5Il91E0iiAF44CeRU/kaQd+NatHpxtBXMNE6PbArDhuIptcyh77FDtueM9f+6gqKAAnVpqxPKKc4DsCNjWuK4IxK8xcxOmzn9j9YE8oavM1wc+o+8Uo8UDgT6uS9XSaQdB04t89/1O/w1cDnyilFU='
+handler = WebhookHandler('514a4a0dbabf4aae1cac76ee28aed860')
 
 
 @app.route("/healthz", methods=['GET'])
@@ -31,8 +34,9 @@ def callback():
 
         # Call LINE API to get user profile
         user_profile_url = f"https://api.line.me/v2/bot/profile/{user_id}"
+        bearer = f'Bearer {line_bot_api_test}'
         headers = {
-            'Authorization': 'Bearer I9mgk1gqe7x4tirEd5AjNi5Il91E0iiAF44CeRU/kaQd+NatHpxtBXMNE6PbArDhuIptcyh77FDtueM9f+6gqKAAnVpqxPKKc4DsCNjWuK4IxK8xcxOmzn9j9YE8oavM1wc+o+8Uo8UDgT6uS9XSaQdB04t89/1O/w1cDnyilFU='
+            'Authorization': bearer
         }
 
         # Make the GET request to fetch user profile
