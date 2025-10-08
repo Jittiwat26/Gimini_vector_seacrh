@@ -11,11 +11,11 @@ from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.chat_history import BaseChatMessageHistory
 
 # Project and environment settings
-PROJECT_ID = "solutions-data"
-DATASET = "companyData"
-TABLEEMBED = "Pre_Test_Order_Embedding"
-REGION = "asia-southeast1"
-JSON_KEY_PATH = "credential/vertexAi.json"
+PROJECT_ID = ""
+DATASET = ""
+TABLEEMBED = ""
+REGION = ""
+JSON_KEY_PATH = ""
 
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = JSON_KEY_PATH
 
